@@ -1,0 +1,301 @@
+{
+  "name": "Agente de Atendimento IA - Z-API",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook-zapi",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-zapi-trigger",
+      "name": "Webhook Z-API",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "webhook-zapi"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.text.message }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "filter-text-messages",
+      "name": "Filtrar Mensagens de Texto",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "merge-context",
+      "name": "Juntar Contexto",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "phone",
+              "name": "phone",
+              "value": "={{ $json.body.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "value": "={{ $json.body.text.message }}",
+              "type": "string"
+            },
+            {
+              "id": "name",
+              "name": "name",
+              "value": "={{ $json.body.senderName || 'Cliente' }}",
+              "type": "string"
+            },
+            {
+              "id": "timestamp",
+              "name": "timestamp",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-data",
+      "name": "Extrair Dados",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [650, 150]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 500
+        }
+      },
+      "id": "openai-chat",
+      "name": "OpenAI Chat",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.phone }}",
+        "contextWindowLength": 10
+      },
+      "id": "buffer-memory",
+      "name": "Memória de Conversa",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1,
+      "position": [850, 450]
+    },
+    {
+      "parameters": {
+        "text": "=Você é um assistente virtual inteligente e prestativo.\n\nSeu objetivo é:\n- Responder perguntas de forma clara e objetiva\n- Ser educado e profissional\n- Manter conversas naturais e contextualizadas\n- Ajudar o cliente da melhor forma possível\n\nNome do cliente: {{ $json.name }}\nMensagem: {{ $json.message }}\n\nResponda de forma amigável e útil. Mantenha as respostas concisas (máximo 3 parágrafos)."
+      },
+      "id": "prompt-template",
+      "name": "Prompt do Agente",
+      "type": "@n8n/n8n-nodes-langchain.promptTemplate",
+      "typeVersion": 1,
+      "position": [850, 150]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}"
+      },
+      "id": "ai-agent",
+      "name": "Agente IA",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.z-api.io/instances/{{ $env.ZAPI_INSTANCE_ID }}/token/{{ $env.ZAPI_TOKEN }}/send-text",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $json.phone }}\",\n  \"message\": \"{{ $json.response }}\"\n}",
+        "options": {}
+      },
+      "id": "send-zapi-message",
+      "name": "Enviar Resposta Z-API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "response",
+              "name": "response",
+              "value": "={{ $json.output }}",
+              "type": "string"
+            },
+            {
+              "id": "phone",
+              "name": "phone",
+              "value": "={{ $('Extrair Dados').item.json.phone }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-response",
+      "name": "Preparar Resposta",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1050, 450]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"success\", \"message\": \"Mensagem processada\" }",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Resposta Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"ignored\", \"message\": \"Tipo de mensagem não suportado\" }",
+        "options": {}
+      },
+      "id": "webhook-response-ignored",
+      "name": "Resposta Ignorada",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 450]
+    }
+  ],
+  "connections": {
+    "Webhook Z-API": {
+      "main": [
+        [
+          {
+            "node": "Filtrar Mensagens de Texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar Mensagens de Texto": {
+      "main": [
+        [
+          {
+            "node": "Extrair Dados",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta Ignorada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Dados": {
+      "main": [
+        [
+          {
+            "node": "Juntar Contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Juntar Contexto": {
+      "main": [
+        [
+          {
+            "node": "Agente IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente IA": {
+      "main": [
+        [
+          {
+            "node": "Preparar Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Resposta": {
+      "main": [
+        [
+          {
+            "node": "Enviar Resposta Z-API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Resposta Z-API": {
+      "main": [
+        [
+          {
+            "node": "Resposta Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-01-26T00:00:00.000Z",
+  "versionId": "1"
+}
